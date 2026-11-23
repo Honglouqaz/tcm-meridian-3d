@@ -35,6 +35,34 @@ python3 tools/verify.py
 
 ![斜视：骨骼层 + 经络](docs/shot_iso_skeleton.jpg)
 
+## v1.3.0：骨性标志 + 逐穴进针几何
+
+![进针模拟：足三里](docs/shot_needle_zusanli.jpg)
+
+每个穴位现在都带三项**从网格实测**的几何量（`data/needling.json`）：
+
+| 字段 | 含义 |
+|---|---|
+| `normal` / `inward` | 该穴体表法向（进针方向，单位向量） |
+| `bone_zh` / `bone_en` | 该穴下方/最近的骨性结构（如合谷→掌骨、膻中→胸骨、风池→枕骨） |
+| `nearest_bone_mm` | 皮肤表面到该骨的最近距离 |
+| `needle_to_bone_mm` | 沿进针方向射线打到**同一块骨**的距离（穿到别的部位一律不采信） |
+
+> ⚠️ **这不是教材的「直刺 0.5~1 寸」**。教材刺灸深度是有出处的医学结论，本仓库没有可靠可引用来源，
+> **不编造数字**。这里给的是可复现、可验算的几何量，界面上明确标注"非临床进针深度"。
+> 取穴落在骨缝/关节处时，"最近的骨"可能是邻骨（如足三里正好在膝关节高度时最近骨为股骨远端），
+> 这是几何事实，不是错误。
+
+demo 里的表现：点任意穴位 → 详情卡显示「下方骨性结构 · 皮肤→骨 XX mm」，并在该穴沿法向画一根针
++ 红点标出触骨位置，滑杆控制进针深度。
+
+### 同时修掉的两个数据级 bug
+
+| 问题 | 表现 | 修法 |
+|---|---|---|
+| **贴体没按部位约束** | 合谷（手）被贴到**大腿外侧**——手垂在大腿旁时最近表面是腿 | 先用"离哪块骨最近"给 10.2 万皮肤顶点做部位标注（臂/腿/躯干/头 × 左右），手臂穴只贴手臂、腿穴只贴腿；肢体穴再保高度、只纠正环向。偏差 **均值 15mm/最大 86mm → 均值 2.6mm/最大 9.5mm** |
+| **骨骼筛选把软组织当骨** | `iliotibial tract`（髂胫束）含 "tibia" 被当成胫骨、`fibular vein` 当腓骨、`maxillary gingiva` 当上颌骨 → "合谷下方是胫骨"这类荒唐结论 | 改成**词边界匹配 + 软组织黑名单**：406 部件 → **228 块真骨**，skeleton.glb 21.4MB → 12.0MB |
+
 ## v1.1.0 修掉的问题（仍然有效）
 
 | 问题 | 原因 | 处理 |
@@ -82,13 +110,15 @@ y 向上，z 向前（腹侧），x 向右（人体左侧为 −x）
 data/acupoints.json     361 穴真源（上游坐标，CC BY 4.0 原数据）
 data/meridians.json     14 经脉穴位序
 data/body.json          ★ 贴体后的 361 穴坐标 + 模型元信息（tools/build_real_body.py 生成）
+data/needling.json      ★ 361 穴的体表法向 / 下方骨性结构 / 到骨距离（tools/build_needling.py 生成）
 demo/index.html         three.js 单页演示（零构建）
 demo/models/skin.glb     真实皮肤网格（3.7 MB）
 demo/models/skeleton.glb 骨骼（21.4 MB，懒加载）
 demo/models/muscles.glb  肌肉（15.8 MB，懒加载）
 demo/vendor/            three.js r160 + GLTFLoader（自带，离线可用）
 tools/build_real_body.py ★ 真实网格导入 + T-pose 转换 + 贴体投影 + GLB 导出
-tools/verify.py           断言式校验（穴数 / 中线 / 贴面距离 / 模型完整性）
+tools/build_needling.py   ★ 骨性标志 + 进针几何（法向 / 最近骨 / 沿法向触骨距离）
+tools/verify.py           断言式校验（穴数 / 中线 / 贴面距离 / 模型完整性 / 解剖抽查）
 tools/parse_acupoints.py  从原始 .lj 文本解析成 JSON
 tools/shots.py            无头多视角截图（验收用）
 docs/                   截图与字段说明

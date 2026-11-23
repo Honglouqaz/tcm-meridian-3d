@@ -86,6 +86,10 @@ async def main():
           const x=b.find(x=>x.dataset.layer==='xray'); if(!x.classList.contains('on')) x.click(); return 'ok'})()""")
         await shot("left_xray")
 
+        # 4.6) 进针模拟：选中足三里（骨骼可见 + 内视），看针与下方骨
+        print("选中:", await js("window.__pick('足三里')"))
+        await shot("needle_zusanli")
+
         # 5) 斜视 + 骨骼
         await js("""(()=>{const b=[...document.querySelectorAll('.layers button')];
           b.find(x=>x.dataset.layer==='muscles').click();

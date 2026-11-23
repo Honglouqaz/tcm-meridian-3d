@@ -157,6 +157,10 @@ function loadModel(url, name) {
 async function load() {
   const body = await (await fetch('../data/body.json')).json();
   state.body = body;
+  // 骨性标志 / 进针几何（tools/build_needling.py 实测）
+  state.needling = await (await fetch('../data/needling.json')).json().catch(() => null);
+  state.needlingById = {};
+  (state.needling?.points || []).forEach(n => state.needlingById[n.id] = n);
   const root = new THREE.Group();
   scene.add(root); state.root = root;
 
@@ -330,6 +334,31 @@ document.querySelectorAll('.views button').forEach(btn => {
   });
 });
 
+// ── 进针模拟（沿穴位法向扎入，长度可拖）────────────────────────────
+const needleGroup = new THREE.Group(); needleGroup.visible = false; scene.add(needleGroup);
+const needleMat = new THREE.MeshStandardMaterial({ color: 0xe8f1ff, metalness: 0.85, roughness: 0.2,
+  emissive: new THREE.Color(0x5b8fd6), emissiveIntensity: 0.9 });
+const needleBody = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.008, 1, 10), needleMat);
+needleBody.geometry.translate(0, -0.5, 0);   // 以顶端为原点，向 -y 延伸
+const boneDot = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10),
+  new THREE.MeshBasicMaterial({ color: 0xff6b6b }));
+needleGroup.add(needleBody, boneDot);
+
+const Z_AXIS = new THREE.Vector3(0, -1, 0);
+function placeNeedle(p, need) {
+  const pos = new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z);
+  const inward = new THREE.Vector3(need.inward[0], need.inward[1], need.inward[2]).normalize();
+  needleGroup.position.copy(pos);
+  needleGroup.quaternion.setFromUnitVectors(Z_AXIS, inward);
+  const mmAvail = need.needle_to_bone_mm ?? need.nearest_bone_mm;
+  const dm = (mmAvail || 0) / 1000 / 0.198;                 // mm → 本项目单位
+  boneDot.position.set(0, -dm, 0);
+  boneDot.visible = !!mmAvail;
+  window.__needleMax = dm;
+  needleBody.scale.y = dm * (Number(document.getElementById('depth')?.value ?? 100) / 100);
+  needleGroup.visible = true;
+}
+
 // ── 点击拾取（对每经的 InstancedMesh 做射线检测）──────────────────
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
@@ -351,6 +380,7 @@ renderer.domElement.addEventListener('pointerup', e => {
 
 function showDetail(p) {
   const el = document.getElementById('detail');
+  const n = state.needlingById[p.id];
   el.style.display = 'block';
   el.innerHTML = `<span class="close" onclick="document.getElementById('detail').style.display='none'">×</span>
     <h2>${p.name}</h2>
@@ -358,8 +388,31 @@ function showDetail(p) {
     <div class="row"><div class="k">标准定位</div>${p.location || '—'}</div>
     <div class="row"><div class="k">释义</div>${p.shiyi || '—'}</div>
     <div class="row"><div class="k">功能主治</div>${p.func || '—'}</div>
-    <div class="row"><div class="k">体表坐标</div>x=${p.pos.x.toFixed(2)} y=${p.pos.y.toFixed(2)} z=${p.pos.z.toFixed(2)}</div>`;
+    <div class="row"><div class="k">体表坐标</div>x=${p.pos.x.toFixed(2)} y=${p.pos.y.toFixed(2)} z=${p.pos.z.toFixed(2)}</div>
+    ${n ? `<div class="row"><div class="k">下方骨性结构</div>${n.bone_zh || '—'}${
+        n.nearest_bone_mm != null ? ` · 皮肤→骨 <b>${n.nearest_bone_mm} mm</b>` : ''}${
+        n.needle_to_bone_mm != null ? `（沿法向触骨 ${n.needle_to_bone_mm} mm）` : ''}</div>
+      <div class="row"><div class="k">进针模拟</div>
+        <input id="depth" type="range" min="0" max="100" value="100" style="width:100%"
+          oninput="window.__setDepth&&window.__setDepth(this.value)">
+        <div style="font-size:11px;color:#7d8896">沿体表法向扎入，滑到头正好触骨。<br>
+          数据为模型几何实测，<b>不是临床进针深度</b>；关节附近的"最近骨"可能是邻骨。</div>
+      </div>` : ''}`;
+  if (n) placeNeedle(p, n); else needleGroup.visible = false;
+  window.__setDepth = v => { needleBody.scale.y = (window.__needleMax || 0.1) * (Number(v) / 100); };
 }
+
+// 供自动化/调试：按名字直接选中穴位（等价于点它）
+window.__pick = name => {
+  const p = state.body?.acupoints?.find(a => a.name === name);
+  if (!p) return 'not found';
+  showDetail(p);
+  const wp = new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z);
+  controls.target.copy(wp);
+  camera.position.copy(wp.clone().add(new THREE.Vector3(0.9, 0.45, 1.5)));
+  controls.update();
+  return `${p.name} ${state.needlingById[p.id]?.bone_zh || ''} ${state.needlingById[p.id]?.nearest_bone_mm ?? ''}`;
+};
 
 // ── 搜索：命中即拉近 ─────────────────────────────────────────────
 document.getElementById('q').addEventListener('input', e => {

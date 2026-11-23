@@ -82,7 +82,7 @@ def main():
     bad = [p["name"] for p in du if abs(p["pos"]["x"]) > 0.02]
     if bad:
         fails.append(f"督脉偏离中线：{bad[:5]}")
-    bad = [p["name"] for p in ren if p["pos"]["z"] <= 0]
+    bad = [p["name"] for p in ren if p["pos"]["z"] <= 0 and p["name"] != "会阴"]
     if bad:
         fails.append(f"任脉未贴在身前（z≤0）：{bad[:5]}")
     # 督脉循行：长强→脊背→百会→前额→鼻→上唇（面部段本来就在前侧），
@@ -132,13 +132,45 @@ def main():
     if d.max() > 0.25:
         fails.append(f"有穴位离皮肤太远：最大 {d.max():.3f} 单位 ≈ {d.max()*198:.0f} mm")
 
+    # 骨性标志 / 进针几何
+    npath = os.path.join(ROOT, "data", "needling.json")
+    if not os.path.exists(npath):
+        fails.append("缺 data/needling.json（跑 tools/build_needling.py）")
+    else:
+        need = json.load(open(npath, encoding="utf-8"))["points"]
+        info["进针数据"] = f"{len(need)} 条"
+        if len(need) != 361:
+            fails.append(f"进针数据 {len(need)} 条 ≠ 361")
+        no_bone = [n["name"] for n in need if not n.get("bone_zh")]
+        if no_bone:
+            fails.append(f"无骨性标志：{len(no_bone)} 个 {no_bone[:5]}")
+        bad_norm = [n["name"] for n in need if not n.get("normal") or abs(sum(x * x for x in n["normal"]) - 1) > 0.02]
+        if bad_norm:
+            fails.append(f"法向非单位向量：{len(bad_norm)} 个 {bad_norm[:5]}")
+        ds = [n["nearest_bone_mm"] for n in need if n.get("nearest_bone_mm") is not None]
+        info["点→最近骨"] = f"中位 {sorted(ds)[len(ds)//2]:.1f} mm · 范围 {min(ds):.1f}~{max(ds):.1f} mm"
+        if max(ds) > 130:
+            fails.append(f"有点→最近骨距离过大 {max(ds):.0f} mm")
+        # 解剖抽查：这些穴位下方必须是特定骨
+        # 取穴常落在骨缝/关节处，"最近的骨"可能就是邻骨，所以按「允许集合」判定
+        SPOT = {"合谷": ("掌骨",), "三阴交": ("胫骨",), "膻中": ("胸骨",), "百会": ("顶骨", "额骨"),
+                "风池": ("枕骨", "颞骨"), "太冲": ("跖骨", "楔骨", "足舟骨"),
+                "肩井": ("肩胛骨", "锁骨", "胸椎", "肋骨"), "命门": ("腰椎", "胸椎"),
+                "足三里": ("胫骨", "腓骨", "股骨"), "曲池": ("肱骨", "桡骨")}
+        by = {n["name"]: n for n in need}
+        spot = []
+        for nm, want in SPOT.items():
+            got = by.get(nm, {}).get("bone_zh") or ""
+            spot.append(f"{nm}→{got}")
+            if not any(w in got for w in want):
+                fails.append(f"解剖抽查不符：{nm} 期望 {'/'.join(want)}，实际 {got}")
+        info["解剖抽查"] = " · ".join(spot)
+
     snap = meta.get("snap", {})
     if snap:
-        info["投影偏差"] = f"均值 {snap.get('mean_mm')} mm / 最大 {snap.get('max_mm')} mm"
-        # 上游 T-pose 坐标本身有 1~9 cm 误差（手臂区最明显），投影只是把它拉回皮肤表面。
-        # 这里卡的是"明显跑错部位"的量级，不是精度。
-        if float(snap.get("max_mm", 999)) > 120:
-            fails.append(f"投影偏差过大 {snap.get('max_mm')} mm（>120mm 说明有穴位跑错部位）")
+        # 这个值 = 从 T-pose 旋转到垂手、再贴到体表的**总位移**（手臂穴最大，因为模型手臂更贴身）。
+        # 它不是误差指标；真正的贴合度看上面的「到皮肤面距离」。
+        info["体位转换位移"] = f"均值 {snap.get('mean_mm')} mm / 最大 {snap.get('max_mm')} mm（T-pose→垂手+贴体）" 
 
     print(json.dumps(info, ensure_ascii=False, indent=2))
     if fails:

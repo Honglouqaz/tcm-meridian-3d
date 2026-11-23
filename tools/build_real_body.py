@@ -69,6 +69,31 @@ ARM_PIVOT = (0.60, 1.42, -0.10)
 MIDLINE_SHIFT = 0.12        # 上游数据中线偏移
 
 
+import re
+
+# 只认这几类骨名（用词边界匹配：避免 iliotibial→tibia、fibular vein→fibula、maxillary gingiva→maxilla）
+BONE_TOKENS = (
+    "femur", "patella", "tibia", "fibula", "talus", "calcaneus", "navicular", "cuboid",
+    "cuneiform", "metatarsal", "humerus", "radius", "ulna", "scapula", "clavicle", "sternum",
+    "metacarpal", "carpal", "tarsal", "sacrum", "coccyx", "ilium", "ischium", "pubis",
+    "rib", "ribs", "vertebra", "vertebrae", "mandible", "maxilla", "zygomatic", "temporal",
+    "parietal", "frontal", "occipital", "sphenoid", "ethmoid", "nasal", "vomer", "lacrimal",
+    "palatine", "hyoid", "malleus", "incus", "stapes", "phalanx", "phalanges", "bone", "skull",
+)
+SOFT_TISSUE = ("artery", "vein", "nerve", "muscle", "ligament", "tendon", "fascia", "tract",
+               "gingiva", "skin", "cartilage", "membrane", "capsule", "septum", "disc", "bursa",
+               "sheath", "gland", "lymph", "ganglion", "set of", "part of", "ganglia",
+               "aponeurosis", "retinaculum", "periosteum", "marrow", "joint", "suture")
+
+
+def is_bone(name):
+    """这个解剖部件到底是不是骨"""
+    low = name.lower()
+    if any(w in low for w in SOFT_TISSUE):
+        return False
+    return any(re.search(rf"\b{t}\b", low) for t in BONE_TOKENS)
+
+
 BONE_KW = ("vertebra", "rib", "sternum", "clavicle", "scapula", "humerus", "radius", "ulna",
            "carpal", "metacarpal", "phalanx", "phalan", "femur", "patella", "tibia", "fibula",
            "tarsal", "metatarsal", "calcaneus", "talus", "navicular", "cuboid", "cuneiform",
@@ -93,7 +118,7 @@ def classify(name):
     n = name.lower()
     if "skin" in n and "eyelid" not in n:
         return "skin"
-    if any(k in n for k in BONE_KW) and "muscle" not in n:
+    if is_bone(name):
         return "bone"
     if any(k in n for k in MUS_KW):
         return "muscle"
@@ -218,8 +243,7 @@ def main():
 
     recs = load_parts()
     skin_rec = [r for r in recs if r["cls"] == "skin" and "umbilicus" not in r["name"]]
-    bones = [r for r in recs if r["cls"] == "bone"
-             and not any(b in r["name"].lower() for b in BONE_BLACKLIST)]
+    bones = [r for r in recs if is_bone(r["name"])]
     muscles = [r for r in recs if r["cls"] == "muscle"
                and any(k in r["name"].lower() for k in MUSCLE_KEEP)
                and "eyelid" not in r["name"].lower()]
@@ -265,54 +289,136 @@ def main():
         out[:, 2] = (pts[:, 1] - Y_SOLE) / s + zmin
         return out
 
-    # ── 3. 穴位：先把手放下来，再换算 ───────────────────────────────
+    # ── 3. 解析骨骼（只解析一次：贴体分区与 GLB 导出共用）─────────────
+    import time
+    from scipy.spatial import cKDTree
+    t0 = time.time()
+    bone_geo = []          # [(name, verts_bp3d, faces)]
+    for r in bones:
+        try:
+            v, f = read_obj(zf, path_of(r["fj"]))
+        except KeyError:
+            continue
+        if not f:
+            continue
+        bone_geo.append((r["name"], np.asarray(v, dtype=np.float64), f))
+    print(f"骨骼解析：{len(bone_geo)} 部件 / {sum(len(f) for _,_,f in bone_geo)} 面（{time.time()-t0:.0f}s）")
+
+    # ── 4. 体表分区：每个皮肤顶点属于哪个部位（由最近的骨决定）─────────
+    def bone_group(nm):
+        low = nm.lower()
+        side = "r" if "right" in low else ("l" if "left" in low else None)
+        if any(k in low for k in ("humerus", "radius", "ulna", "carpal", "metacarpal",
+                                  "phalanx of hand", "phalanges of hand", "metacarpal bone")):
+            return ("arm", side)
+        if any(k in low for k in ("femur", "tibia", "fibula", "patella", "tarsal", "metatarsal",
+                                  "phalanx of foot", "phalanges of foot", "calcaneus", "talus",
+                                  "navicular", "cuboid", "cuneiform")):
+            return ("leg", side)
+        if any(k in low for k in ("frontal", "parietal", "temporal", "occipital", "sphenoid",
+                                  "ethmoid", "nasal", "vomer", "zygomatic", "maxilla", "mandible",
+                                  "lacrimal", "palatine", "hyoid", "skull", "incus", "malleus", "stapes")):
+            return ("head", None)
+        return ("torso", None)
+
+    skinL = to_local(sv)                                  # 皮肤顶点（本项目坐标）
+    triL = skinL[np.asarray(sf)]
+    # 顶点法线（面积加权），用于把穴位往外推一点
+    vn = np.zeros_like(skinL)
+    fn = np.cross(triL[:, 1] - triL[:, 0], triL[:, 2] - triL[:, 0])
+    for k in range(3):
+        np.add.at(vn, np.asarray(sf)[:, k], fn)
+    ln = np.linalg.norm(vn, axis=1); ln[ln == 0] = 1e-12
+    vn = vn / ln[:, None]
+
+    groups_pts = {}
+    for nm, v, f in bone_geo:
+        kind, side = bone_group(nm)
+        vl = to_local(v)
+        if side is None:                                   # 中轴骨按顶点 x 的中位定侧
+            mx = float(np.median(vl[:, 0]))
+            side = None if abs(mx) < 0.12 else ("r" if mx > 0 else "l")
+        key = kind if side is None else f"{kind}_{side}"
+        groups_pts.setdefault(key, []).append(vl)
+
+    print("骨性分区:", {k: sum(len(a) for a in v) for k, v in sorted(groups_pts.items())})
+    trees = {k: cKDTree(np.concatenate(v)) for k, v in groups_pts.items() if v}
+
+    # 给每个皮肤顶点打部位标签
+    keys = list(trees)
+    dmat = np.stack([trees[k].query(skinL, k=1)[0] for k in keys], axis=1)
+    labels = np.array(keys)[np.argmin(dmat, axis=1)]
+    from collections import Counter
+    skincnt = Counter(labels.tolist())
+    print("体表分区顶点数:", dict(skincnt))
+    skin_tree = {k: cKDTree(skinL[labels == k]) for k in keys if (labels == k).sum() > 50}
+    skin_idx = {k: np.where(labels == k)[0] for k in keys}
+
+    # ── 5. 穴位：T-pose → 垂手，再贴到**同一部位**的体表 ───────────────
     raw = json.load(open(os.path.join(ROOT, "data", "acupoints.json"), encoding="utf-8"))
-    pts, meta = [], []
+    pts, meta, expect = [], [], []
     px, py, pz = ARM_PIVOT
     for a in raw["acupoints"]:
         q = a["pos"]
         x, y, z = q["x"] - MIDLINE_SHIFT, q["y"], q["z"]
-        if abs(x) > 0.62 and 0.9 < y < 1.95:          # 手臂区：绕肩关节转 -90°（T-pose → 下垂）
+        raw_x, raw_y = x, y
+        if abs(x) > 0.62 and 0.9 < y < 1.95:              # 手臂区：绕肩关节转 -90°
             dx, dy = abs(x) - px, y - py
-            x = math.copysign(px + dy, x)             # 沿 y 方向伸出去
-            y = py - dx                               # 原来水平长度变成向下
+            x = math.copysign(px + dy, x)
+            y = py - dx
         pts.append((x, y, z))
         meta.append(a)
+        side = "r" if raw_x > 0 else "l"
+        if abs(raw_x) > 1.05:
+            expect.append(f"arm_{side}")
+        elif raw_y < -2.55:
+            expect.append(f"leg_{side}")
+        elif raw_y > 1.95:
+            expect.append("head")
+        else:
+            expect.append("torso")
     P = np.asarray(pts, dtype=np.float64)
-    Pb = to_bp3d(P)
 
-    # ── 4. 最近三角面投影（贴到真实皮肤）────────────────────────────
-    tri = sv[np.asarray(sf)]                          # M x 3 x 3
-    cen = tri.mean(1)                                 # M x 3 重心
-    # 预筛半径：足够覆盖体表到穴位的距离（mm）
-    R = 220.0
-    snapped = np.zeros_like(Pb)
-    dist = np.zeros(len(Pb))
-    import time
-    t_start = time.time()
-    for i, p in enumerate(Pb):
-        near = np.linalg.norm(cen - p, axis=1) < R
-        T = tri[near]
-        if len(T) == 0:                                # 极端情况退回全体
-            T = tri
-        best, bestd = None, np.inf
-        for st in range(0, len(T), args.chunk):
-            B = T[st:st + args.chunk]
-            cand = closest_on_triangle(p[None, :], B[:, 0], B[:, 1], B[:, 2])   # (chunk,3)
-            dd = np.linalg.norm(cand - p[None, :], axis=-1)                     # (chunk,)
-            j = int(np.argmin(dd))
-            if dd[j] < bestd:
-                bestd, best = float(dd[j]), cand[j]
-        snapped[i], dist[i] = best, bestd
-        if (i + 1) % 60 == 0:
-            print(f"  投影 {i+1}/{len(Pb)}  {time.time()-t_start:.0f}s")
-
-    S = to_local(snapped)
-    # 中线穴（任督）：强制 x=0，并把 z 推到所在侧的皮肤表面
+    mism = Counter()
+    snapped = np.zeros_like(P)
+    dist = np.zeros(len(P))
     mid_mask = np.array([a["meridian_id"] in (13, 14) for a in meta])
-    S[mid_mask, 0] = 0.0
-    print(f"贴体完成：平均偏差 {dist.mean():.1f} mm，最大 {dist.max():.1f} mm"
-          f"（{dist.max()*s:.3f} 单位）")
+    for i, p in enumerate(P):
+        want = expect[i]
+        if want not in skin_tree:                          # 该部位没有顶点 → 退回全体
+            mism[want] += 1
+            want = max(skin_tree, key=lambda k: skin_tree[k].n)
+        gg = want
+        if mid_mask[i]:                                    # 任督：只在中线附近找
+            idx = skin_idx.get(gg, np.arange(len(skinL)))
+            sel = idx[np.abs(skinL[idx, 0]) < 0.09]
+            if len(sel) < 10:
+                sel = idx
+            d = np.linalg.norm(skinL[sel] - p, axis=1)
+            j = int(sel[int(np.argmin(d))])
+        elif gg.startswith("arm") or gg.startswith("leg"):
+            # 肢体：穴位沿肢体方向的位置由 y 编码（最可靠），所以**保住 y 带**，只在环向纠正
+            idx = skin_idx.get(gg, np.arange(len(skinL)))
+            cand = idx[np.abs(skinL[idx, 1] - p[1]) < 0.18]
+            if abs(p[0]) > 0.12:                       # 同侧、且别落到两腿/两臂之间的中线
+                same = np.sign(skinL[cand, 0]) == np.sign(p[0])
+                if same.sum() >= 5:
+                    cand = cand[same]
+            if len(cand) < 5:
+                cand = idx
+            d = np.linalg.norm(skinL[cand] - p, axis=1)
+            j = int(cand[int(np.argmin(d))])
+        else:
+            _d, _j = skin_tree[gg].query(p, k=1)
+            j = int(skin_idx[gg][int(_j)])
+        snapped[i] = skinL[j] + vn[j] * 0.018
+        if mid_mask[i]:
+            snapped[i, 0] = 0.0
+        dist[i] = float(np.linalg.norm(P[i] - skinL[j]))
+
+    print(f"贴体完成（按部位约束）：平均偏差 {dist.mean()*s*1000:.1f} mm，"
+          f"最大 {dist.max()*s*1000:.1f} mm" + (f"；部位缺失退回全体：{dict(mism)}" if mism else ""))
+    S = snapped
 
     # ── 5. 导出 GLB ────────────────────────────────────────────────
     mdl = os.path.join(ROOT, "demo", "models")
@@ -324,23 +430,29 @@ def main():
     nv, nf, sz = write_glb(os.path.join(mdl, "skin.glb"), allv[0], allf[0], "skin")
     print(f"skin.glb: {nv} 顶点 / {nf} 面 / {sz/1e6:.2f} MB")
 
-    for group, sel, fname in (("skeleton", bones, "skeleton.glb"),
-                              ("muscles", muscles, "muscles.glb")):
-        gv, gf, base = [], [], 0
-        used = 0
-        for r in sel:
-            try:
-                v, f = read_obj(zf, path_of(r["fj"]))
-            except KeyError:
-                continue
-            if not v or not f:
-                continue
-            gv.extend(to_local(np.asarray(v, dtype=np.float64)).tolist())
-            gf.extend([(a + base, b + base, c + base) for a, b, c in f])
-            base += len(v)
-            used += 1
-        nv, nf, sz = write_glb(os.path.join(mdl, fname), gv, gf, group)
-        print(f"{fname}: {used} 个部件 / {nv} 顶点 / {nf} 面 / {sz/1e6:.2f} MB")
+    # 骨骼：复用已解析的 bone_geo
+    gv, gf, base = [], [], 0
+    for nm, v, f in bone_geo:
+        gv.extend(to_local(v).tolist())
+        gf.extend([(a + base, b + base, c + base) for a, b, c in f])
+        base += len(v)
+    nv, nf, sz = write_glb(os.path.join(mdl, "skeleton.glb"), gv, gf, "skeleton")
+    print(f"skeleton.glb: {len(bone_geo)} 个部件 / {nv} 顶点 / {nf} 面 / {sz/1e6:.2f} MB")
+
+    # 肌肉：按需解析
+    gv, gf, base, used = [], [], 0, 0
+    for r in muscles:
+        try:
+            v, f = read_obj(zf, path_of(r["fj"]))
+        except KeyError:
+            continue
+        if not v or not f:
+            continue
+        gv.extend(to_local(np.asarray(v, dtype=np.float64)).tolist())
+        gf.extend([(a + base, b + base, c + base) for a, b, c in f])
+        base += len(v); used += 1
+    nv, nf, sz = write_glb(os.path.join(mdl, "muscles.glb"), gv, gf, "muscles")
+    print(f"muscles.glb: {used} 个部件 / {nv} 顶点 / {nf} 面 / {sz/1e6:.2f} MB")
 
     # ── 6. 写 body.json v2 ─────────────────────────────────────────
     out_pts = []
@@ -359,15 +471,19 @@ def main():
             "midline_shift": MIDLINE_SHIFT,
             "arm_pivot": list(ARM_PIVOT),
             "scale": {"unit_to_mm": round(1 / s, 2), "unit_to_m": round(1 / s / 1000, 4)},
+            "_bp3d_cx": round(float(cx), 3), "_bp3d_cy": round(float(cy), 3),
+            "_bp3d_zmin": round(float(zmin), 3),
             "orientation": {"up": "+y", "front": "+z", "right": "+x",
                             "front_sign_bp3d": front_sign},
             "height": round(Y_VERTEX - Y_SOLE, 2),
             "models": {"skin": "demo/models/skin.glb",
                        "skeleton": "demo/models/skeleton.glb",
                        "muscles": "demo/models/muscles.glb"},
-            "snap": {"mean_mm": round(float(dist.mean()), 2),
-                     "max_mm": round(float(dist.max()), 2)},
-            "note": "穴位坐标已从 T-pose 转换到解剖学站姿，并投影到真实皮肤网格表面",
+            "snap": {"mean_mm": round(float(dist.mean()) * 1 / s, 1),
+                     "max_mm": round(float(dist.max()) * 1 / s, 1)},
+            "region_labels": {k: int(v) for k, v in skincnt.items()},
+            "note": ("穴位坐标已从 T-pose 转换到解剖学站姿，并按**体表部位分区**贴到真实皮肤"
+                     "（手臂穴只贴手臂、腿穴只贴腿），避免手垂在大腿旁时被吸到大腿上"),
         },
         "acupoints": out_pts,
     }
