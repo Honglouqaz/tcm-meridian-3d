@@ -35,6 +35,39 @@ python3 tools/verify.py
 
 ![斜视：骨骼层 + 经络](docs/shot_iso_skeleton.jpg)
 
+## 接入微信小程序（四时阁 · 真实解剖 3D）
+
+桌面版模型 3.7/12/17MB，小程序分包上限 2MB、主包 2MB ⇒ **网格不进包，走网络 + 本地缓存**。
+
+```bash
+# 精简版（只减面、不改坐标，与桌面版共用同一套 body.json / needling.json）
+python3 tools/build_mp_models.py     # → demo/models_mp/{skin,skeleton,muscles}.glb
+                                     #   skin 0.81MB / 骨骼 1.88MB / 肌肉 1.59MB（省 78~91%）
+```
+
+分发布局（`tcm.yanyusk.uk` 与小程序 API 同域，无需另加白名单）：
+
+| 路径 | 内容 |
+|---|---|
+| `/api/m/tcm3d/<name>.bin` | T3DB 裸二进制：`magic T3DB` + `u32 顶点数` + `u32 面数` + Float32 位置 + Uint32 索引 |
+| `/api/m/tcm3d/<name>.glb` | 同一模型的 GLB（桌面/网页用） |
+| `/api/m/tcm3d/data/body.json` | 361 穴贴体坐标 + 模型元信息 |
+| `/api/m/tcm3d/data/needling.json` | 逐穴法向 / 骨性结构 / 到骨距离 |
+| `/api/m/tcm3d/manifest` | 体积与 mtime，供客户端判断是否重下 |
+
+为什么给 `.bin` 而不是 GLB：小程序里加载 GLB 要额外适配 GLTFLoader（XHR/路径 shim 一堆坑），
+而裸二进制三行就能进 `THREE.BufferGeometry`：
+
+```js
+const { positions, indices } = parseT3DB(arrayBuffer);
+g.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+g.setIndex(new THREE.BufferAttribute(indices, 1));
+g.computeVertexNormals();
+```
+
+**已知风险**：骨骼/肌肉顶点数 > 65535，索引用 Uint32，依赖 `OES_element_index_uint`；
+低端机若不支持需降级为 Uint16 分片。
+
 ## v1.3.0：骨性标志 + 逐穴进针几何
 
 ![进针模拟：足三里](docs/shot_needle_zusanli.jpg)
