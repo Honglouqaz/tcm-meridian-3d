@@ -39,10 +39,20 @@ async def main():
 
         await send("Page.enable")
         await send("Runtime.enable")
+        await send("Network.enable")
+        await send("Network.setCacheDisabled", {"cacheDisabled": True})   # 否则 GLB 走缓存，改了文件看不到
         await send("Emulation.setDeviceMetricsOverride",
                    {"width": 1500, "height": 1900, "deviceScaleFactor": 1, "mobile": False})
         await send("Page.navigate", {"url": URL})
-        await asyncio.sleep(4)
+        # 等模型加载完（加载遮罩隐藏），最多 90 秒
+        for _ in range(90):
+            await asyncio.sleep(1)
+            done = await js("document.getElementById('load').style.display === 'none'")
+            if done:
+                break
+        else:
+            print("⚠️ 加载超时，仍截图")
+        await asyncio.sleep(2)
 
         print("状态:", await js("document.getElementById('stat').textContent"))
         print("错误:", await js("document.getElementById('err').textContent || '(无)'"))
@@ -52,10 +62,15 @@ async def main():
         await js("document.querySelector('.views button[data-view=front]').click()")
         await shot("front_default")
 
-        # 2) 骨骼 + 肌肉打开
+        # 2) 骨骼 + 肌肉打开（这两个模型是懒加载的，等它们真的进来再截图）
         await js("""(()=>{const b=[...document.querySelectorAll('.layers button')];
           b.find(x=>x.dataset.layer==='skeleton').click();
           b.find(x=>x.dataset.layer==='muscles').click(); return 'ok'})()""")
+        for _ in range(60):
+            await asyncio.sleep(1)
+            if await js("!!(window.__layers&&window.__layers.skeleton&&window.__layers.muscles)"):
+                break
+        await asyncio.sleep(1.5)
         await shot("front_layers")
 
         # 3) 后视（督脉）
@@ -65,6 +80,11 @@ async def main():
         # 4) 左视（看任督是否贴体表）
         await js("document.querySelector('.views button[data-view=left]').click()")
         await shot("left_profile")
+
+        # 4.5) 左视 内视（皮肤几乎全透，看经络与骨骼关系）
+        await js("""(()=>{const b=[...document.querySelectorAll('.layers button')];
+          const x=b.find(x=>x.dataset.layer==='xray'); if(!x.classList.contains('on')) x.click(); return 'ok'})()""")
+        await shot("left_xray")
 
         # 5) 斜视 + 骨骼
         await js("""(()=>{const b=[...document.querySelectorAll('.layers button')];
