@@ -3,264 +3,350 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>3D 人体经络穴位图谱 · 361 穴</title>
+<title>3D 人体经络穴位图谱 · 361 穴 · 骨骼肌肉分层</title>
 <style>
-  :root{--ink:#1a1a1a;--paper:#f5f1e8;--accent:#8b2f2f;}
+  :root{--ink:#e8e4da;--dim:#6b7684;--gold:#c9a227;--paper:#0d0f12;--panel:#14171c;--line:#242a33;--accent:#8b2f2f}
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;overflow:hidden;background:#0d0f12;color:#e8e4da;
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--paper);color:var(--ink);
     font:14px/1.6 "Songti SC","Noto Serif CJK SC",serif}
   #app{display:flex;height:100%}
-  #side{width:260px;flex:0 0 260px;background:#14171c;border-right:1px solid #242a33;
+  #side{width:272px;flex:0 0 272px;background:var(--panel);border-right:1px solid var(--line);
     display:flex;flex-direction:column;min-height:0}
-  #side h1{font-size:15px;margin:0;padding:14px 14px 10px;letter-spacing:1px;color:#f0d9a8;
-    border-bottom:1px solid #242a33}
-  #q{margin:10px 12px;padding:7px 10px;border-radius:6px;border:1px solid #2c3540;
-    background:#0d0f12;color:#e8e4da;font-family:inherit}
+  #side h1{font-size:15px;margin:0;padding:13px 14px 9px;letter-spacing:1px;color:#f0d9a8;border-bottom:1px solid var(--line)}
+  .sec{padding:9px 12px;border-bottom:1px solid var(--line)}
+  .sec .t{font-size:11px;letter-spacing:2px;color:var(--dim);margin-bottom:7px}
+  .layers{display:flex;flex-wrap:wrap;gap:6px}
+  .layers button{flex:1 1 44%;padding:6px 8px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;
+    background:#0d0f12;color:#9aa6b4;border:1px solid #2c3540}
+  .layers button.on{background:#2a2016;color:#f0d9a8;border-color:#6b5426}
+  .views{display:flex;gap:5px}
+  .views button{flex:1;padding:5px 0;border-radius:6px;cursor:pointer;font:inherit;font-size:12px;
+    background:#0d0f12;color:#9aa6b4;border:1px solid #2c3540}
+  .views button:hover{color:#f0d9a8;border-color:#6b5426}
+  #q{margin:9px 12px;padding:7px 10px;border-radius:6px;border:1px solid #2c3540;background:#0d0f12;
+    color:var(--ink);font-family:inherit;font-size:13px}
   #list{overflow:auto;flex:1;padding:0 8px 12px}
-  .m{display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer}
+  .m{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;cursor:pointer}
   .m:hover{background:#1c2128}
-  .m input{accent-color:#c9a227}
+  .m input{accent-color:var(--gold)}
   .dot{width:9px;height:9px;border-radius:50%;flex:0 0 9px}
   .m span{font-size:13px}
-  #hint{padding:8px 12px;font-size:12px;color:#6b7684;border-top:1px solid #242a33}
+  .m em{color:var(--dim);font-style:normal;font-size:11px}
+  #hint{padding:8px 12px;font-size:11px;color:var(--dim);border-top:1px solid var(--line);line-height:1.7}
   #stage{flex:1;position:relative;min-width:0}
-  #detail{position:absolute;right:14px;top:14px;width:290px;max-height:calc(100% - 28px);
-    overflow:auto;background:rgba(20,23,28,.94);border:1px solid #2c3540;border-radius:10px;
-    padding:14px;display:none;backdrop-filter:blur(6px)}
+  #detail{position:absolute;right:14px;top:14px;width:300px;max-height:calc(100% - 28px);overflow:auto;
+    background:rgba(20,23,28,.95);border:1px solid #2c3540;border-radius:10px;padding:14px;display:none;
+    backdrop-filter:blur(6px)}
   #detail h2{margin:0 0 2px;font-size:19px;color:#f0d9a8}
   #detail .py{font-size:11px;letter-spacing:1px;color:#7d8896;margin-bottom:10px}
   #detail .row{margin:9px 0;font-size:13px;line-height:1.75;color:#cfcabd}
-  #detail .k{color:#c9a227;font-size:12px;letter-spacing:1px}
-  #tip{position:absolute;left:14px;bottom:14px;font-size:12px;color:#6b7684}
+  #detail .k{color:var(--gold);font-size:12px;letter-spacing:1px}
+  #detail .close{position:absolute;right:10px;top:8px;cursor:pointer;color:#7d8896;font-size:16px}
   #stat{position:absolute;left:14px;top:14px;font-size:12px;color:#8b95a3}
+  #tip{position:absolute;left:14px;bottom:14px;font-size:11px;color:var(--dim)}
+  #err{position:absolute;inset:0;display:none;place-items:center;padding:40px;text-align:center;color:#e8b4b4}
 </style>
 </head>
 <body>
 <div id="app">
   <div id="side">
     <h1>经络穴位 · 361 穴</h1>
+    <div class="sec">
+      <div class="t">分层</div>
+      <div class="layers">
+        <button data-layer="skin" class="on">皮肤</button>
+        <button data-layer="skeleton">骨骼</button>
+        <button data-layer="muscles">肌肉</button>
+        <button data-layer="meridians" class="on">经络</button>
+        <button data-layer="points" class="on">穴位</button>
+        <button data-layer="xray">内视</button>
+        <button data-layer="wire">皮肤线框</button>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="t">视角</div>
+      <div class="views">
+        <button data-view="front">前</button>
+        <button data-view="back">后</button>
+        <button data-view="left">左</button>
+        <button data-view="right">右</button>
+        <button data-view="top">顶</button>
+        <button data-view="iso">斜</button>
+      </div>
+    </div>
     <input id="q" placeholder="搜索：合谷 / 足三里 / LI4">
     <div id="list"></div>
-    <div id="hint">拖拽旋转 · 滚轮缩放 · 点穴位看释义</div>
+    <div id="hint">拖拽旋转 · 滚轮缩放 · 点穴位看释义<br>
+      任脉/督脉已归正到前后正中线（x=0），全部 361 穴贴附体表</div>
   </div>
   <div id="stage">
     <div id="stat"></div>
     <div id="detail"></div>
-    <div id="tip">数据：GB/T 12346-2021 校订 · CC BY 4.0</div>
+    <div id="tip">数据：GB/T 12346-2021 校订 · 体表几何由 tools/build_body.py 反推</div>
+    <div id="err"></div>
   </div>
 </div>
 
 <script type="importmap">
 {"imports":{
-  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
-  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+  "three":"./vendor/three.module.js",
+  "three/addons/":"./vendor/"
 }}
 </script>
 
 <script type="module">
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OrbitControls } from './vendor/controls/OrbitControls.js';
+import { buildSkin, buildSkeleton, buildMuscles, profileAt, setSkinMode } from './anatomy.js';
 
 const PALETTE = ['#C0392B','#E67E22','#F1C40F','#27AE60','#16A085','#2980B9','#8E44AD',
                  '#2C3E50','#D35400','#7F8C8D','#1ABC9C','#34495E','#E74C3C','#9B59B6'];
+const MID_MERIDIANS = new Set([13, 14]);   // 任脉 / 督脉
 
 const stage = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(stage.clientWidth, stage.clientHeight);
 stage.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#0d0f12');
-const camera = new THREE.PerspectiveCamera(42, stage.clientWidth/stage.clientHeight, 0.02, 200);
+const camera = new THREE.PerspectiveCamera(34, stage.clientWidth / stage.clientHeight, 0.05, 200);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+controls.minDistance = 1.5;
+controls.maxDistance = 40;
 
-scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 2.2));
-const key = new THREE.DirectionalLight(0xffffff, 1.6); key.position.set(3,6,4); scene.add(key);
-scene.add(new THREE.DirectionalLight(0x88aaff, .7).translateX(-4).translateY(2));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 2.0));
+const key = new THREE.DirectionalLight(0xffffff, 1.5); key.position.set(4, 8, 6); scene.add(key);
+const fill = new THREE.DirectionalLight(0x88aaff, 0.8); fill.position.set(-5, 2, -4); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffd9a0, 0.6); rim.position.set(0, -3, -6); scene.add(rim);
 
-// 24 条参考网格（地面）
-const grid = new THREE.GridHelper(6, 24, 0x1b2430, 0x141b23);
-grid.position.y = -0.02;
+const grid = new THREE.GridHelper(10, 20, 0x1b2430, 0x141b23);
 scene.add(grid);
 
-const state = {data:null, points:[], meshes:[], visible:new Set(), selected:null};
+const state = {
+  body: null, root: null, layers: {}, meridians: [], meshes: [], visible: new Set(),
+  selected: null, colorOf: {}, labels: {},
+};
 
-function bounds(pts){
-  const b = {minx:1e9,maxx:-1e9,miny:1e9,maxy:-1e9,minz:1e9,maxz:-1e9};
-  for(const p of pts){
-    b.minx=Math.min(b.minx,p.x); b.maxx=Math.max(b.maxx,p.x);
-    b.miny=Math.min(b.miny,p.y); b.maxy=Math.max(b.maxy,p.y);
-    b.minz=Math.min(b.minz,p.z); b.maxz=Math.max(b.maxz,p.z);
+function setLayer(name, on) {
+  state.layers[name] = on;
+  if (name === 'xray') { setSkinMode(state.root, on ? 'xray' : 'solid'); return; }
+  const map = { skin: 'skin', skeleton: 'skeleton', muscles: 'muscles', meridians: 'meridians', points: 'points' };
+  if (name === 'wire') {
+    const g = state.root?.getObjectByName('skin');
+    if (g) g.traverse(c => { if (c.userData.wire) c.visible = on; });
+    return;
   }
-  return b;
+  const g = state.root?.getObjectByName(map[name]);
+  if (g) g.visible = on;
 }
 
-async function load(){
-  const res = await fetch('../data/acupoints.json');
-  const d = await res.json();
-  state.data = d;
-  state.points = d.acupoints;
-  const b = bounds(state.points);
-  const h = b.maxy - b.miny, cy = (b.maxy + b.miny)/2;
-  const scale = 2.6 / h;              // 归一化到 2.6 单位高
+async function load() {
+  const res = await fetch('../data/body.json');
+  if (!res.ok) throw new Error(`body.json 读取失败（${res.status}），请先运行 tools/build_body.py`);
+  const body = await res.json();
+  state.body = body;
 
-  // 经络颜色
-  const colorOf = {};
-  d.meridians.forEach((m,i)=> colorOf[m.id] = PALETTE[i % PALETTE.length]);
-  d.meridians.forEach(m=> state.visible.add(m.id));
+  const L = body.meta.landmarks;
+  const centerY = (L.vertex + L.sole) / 2;
+  const root = new THREE.Group();
+  root.position.y = -centerY;
+  scene.add(root);
+  state.root = root;
 
-  const group = new THREE.Group();
-  group.position.y = -cy*scale;
-  group.scale.setScalar(scale);
-  scene.add(group);
+  // —— 三层解剖 ——
+  const skin = buildSkin(body); skin.visible = true; root.add(skin);
+  const skeleton = buildSkeleton(body); skeleton.visible = false; root.add(skeleton);
+  const muscles = buildMuscles(body); muscles.visible = false; root.add(muscles);
 
-  // 经络折线：主线 + 分支
-  const byId = {}; state.points.forEach(p=> byId[p.id]=p);
-  const lines = [];
-  const pushLine = (ids, color) => {
-    const verts = [];
-    for(let i=0;i<ids.length-1;i++){
-      const a = byId[ids[i]], c = byId[ids[i+1]];
-      if(!a||!c) continue;
-      verts.push(a.pos.x,a.pos.y,a.pos.z, c.pos.x,c.pos.y,c.pos.z);
+  // —— 经络（贴体表的曲线） ——
+  const meridianGroup = new THREE.Group(); meridianGroup.name = 'meridians'; root.add(meridianGroup);
+  const byId = {};
+  body.acupoints.forEach(p => byId[p.id] = p);
+  body.meridians?.forEach((m, i) => state.colorOf[m.id] = PALETTE[i % PALETTE.length]);
+  // body.json 里没有 meridians 字段时，按 acupoint 上的 meridian_id 归并
+  const groups = {};
+  body.acupoints.forEach(p => (groups[p.meridian_id] ||= []).push(p));
+  const meridianNames = {};
+  body.acupoints.forEach(p => meridianNames[p.meridian_id] = p.meridian);
+  Object.entries(groups).forEach(([mid, pts]) => {
+    const id = +mid;
+    pts.sort((a, b) => a.id - b.id);
+    const color = new THREE.Color(state.colorOf[id] || '#888');
+    const isMid = MID_MERIDIANS.has(id);
+    if (pts.length >= 2) {
+      // 穴位已贴体表，控制点直接取用；再沿法向外推 0.01 让线浮在皮肤上
+      const v3 = pts.map(p => {
+        const pr = profileAt(body.profile, p.pos.y);
+        const nx = p.pos.x / (pr.rx || 1), nz = (p.pos.z - pr.zc) / (pr.rz || 1);
+        const n = Math.hypot(nx, nz) || 1;
+        return new THREE.Vector3(p.pos.x + nx / n * 0.010, p.pos.y, p.pos.z + nz / n * 0.010);
+      });
+      const curve = new THREE.CatmullRomCurve3(v3, false, 'catmullrom', 0.35);
+      const tube = new THREE.Mesh(
+        new THREE.TubeGeometry(curve, Math.max(24, pts.length * 4), isMid ? 0.016 : 0.009, 6, false),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: isMid ? 0.95 : 0.62, depthWrite: false }));
+      tube.userData.meridian = id;
+      meridianGroup.add(tube); state.meridians.push(tube);
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
-    const mat = new THREE.LineBasicMaterial({color:new THREE.Color(color), transparent:true, opacity:.55});
-    const line = new THREE.LineSegments(g, mat);
-    line.userData.meridian = ids.__mid;
-    group.add(line); lines.push(line);
-  };
-  d.meridians.forEach(m=>{
-    const ids = m.points.slice(); ids.__mid = m.id;
-    pushLine(ids, colorOf[m.id]);
-  });
-  (d.branches||[]).forEach(br=>{
-    const ids = br.points.slice(); ids.__mid = br.meridian_id;
-    pushLine(ids, colorOf[br.meridian_id]||'#888');
+    state.visible.add(id);
   });
 
-  // 穴位点：小球（可点击）
-  const sphere = new THREE.SphereGeometry(0.016, 10, 8);
-  state.meridiansGroup = group;
-  for(const p of state.points){
-    const mat = new THREE.MeshStandardMaterial({
-      color:new THREE.Color(colorOf[p.meridian_id]||'#ccc'),
-      emissive:new THREE.Color(colorOf[p.meridian_id]||'#ccc').multiplyScalar(.35),
-      roughness:.45, metalness:.05});
-    const mesh = new THREE.Mesh(sphere, mat);
+  // —— 穴位 ——
+  const pointGroup = new THREE.Group(); pointGroup.name = 'points'; root.add(pointGroup);
+  const sphere = new THREE.SphereGeometry(0.019, 12, 10);
+  for (const p of body.acupoints) {
+    const color = new THREE.Color(state.colorOf[p.meridian_id] || '#ccc');
+    const mesh = new THREE.Mesh(sphere, new THREE.MeshStandardMaterial({
+      color, emissive: color.clone().multiplyScalar(0.45), roughness: 0.4, metalness: 0.05 }));
     mesh.position.set(p.pos.x, p.pos.y, p.pos.z);
     mesh.userData.point = p;
-    group.add(mesh); state.meshes.push(mesh);
+    pointGroup.add(mesh); state.meshes.push(mesh);
+  }
+
+  // 任督加一圈细环，强调「在正中线上」
+  for (const mid of MID_MERIDIANS) {
+    const pts = (groups[mid] || []).slice().sort((a, b) => a.id - b.id);
+    if (pts.length < 2) continue;
+    const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(p.pos.x, p.pos.y, p.pos.z)), false, 'catmullrom', 0.3);
+    const halo = new THREE.Mesh(new THREE.TubeGeometry(curve, 160, 0.045, 8, false),
+      new THREE.MeshBasicMaterial({ color: mid === 13 ? 0xffd9a0 : 0x9ecbff, transparent: true, opacity: 0.16 }));
+    root.add(halo);
   }
 
   // 相机取景
-  const target = new THREE.Vector3(0, 0, 0);
-  camera.position.set(1.5, 0.35, 2.6);
-  controls.target.copy(target);
+  camera.position.set(0, 0.6, 18);
+  controls.target.set(0, 0, 0);
   controls.update();
 
   document.getElementById('stat').textContent =
-    `${state.points.length} 穴 · ${d.meridians.length} 经脉 · ${(d.branches||[]).length} 分支线`;
+    `${body.acupoints.length} 穴 · ${Object.keys(groups).length} 经脉 · 体表剖面 ${body.profile.length} 层 · 已校正中线`;
 
-  buildSidebar();
+  buildSidebar(meridianNames);
   animate();
 }
 
-function buildSidebar(){
+function buildSidebar(names) {
   const list = document.getElementById('list');
-  const colorOf = {};
-  state.data.meridians.forEach((m,i)=> colorOf[m.id]=PALETTE[i%PALETTE.length]);
   list.innerHTML = '';
-  state.data.meridians.forEach(m=>{
+  Object.entries(names).map(([mid, name]) => [+mid, name]).sort((a, b) => a[0] - b[0]).forEach(([mid, name]) => {
+    const count = state.meshes.filter(m => m.userData.point.meridian_id === mid).length;
     const row = document.createElement('label');
     row.className = 'm';
-    row.innerHTML = `<input type="checkbox" checked data-mid="${m.id}">
-      <i class="dot" style="background:${colorOf[m.id]}"></i>
-      <span>${m.name} <em style="color:#6b7684;font-style:normal">${m.points.length}</em></span>`;
-    row.querySelector('input').addEventListener('change', e=>{
-      const mid = +e.target.dataset.mid;
-      e.target.checked ? state.visible.add(mid) : state.visible.delete(mid);
+    row.innerHTML = `<input type="checkbox" checked data-mid="${mid}">
+      <i class="dot" style="background:${state.colorOf[mid]}"></i>
+      <span>${name} <em>${count}</em>${MID_MERIDIANS.has(mid) ? ' <em>·中线</em>' : ''}</span>`;
+    row.querySelector('input').addEventListener('change', e => {
+      const id = +e.target.dataset.mid;
+      e.target.checked ? state.visible.add(id) : state.visible.delete(id);
       applyVisibility();
     });
     list.appendChild(row);
   });
 }
 
-function applyVisibility(){
-  for(const mesh of state.meshes){
-    mesh.visible = state.visible.has(mesh.userData.point.meridian_id);
-  }
-  state.meridiansGroup.children.forEach(c=>{
-    if(c.userData.meridian !== undefined)
-      c.visible = state.visible.has(c.userData.meridian);
-  });
+function applyVisibility() {
+  for (const mesh of state.meshes) mesh.visible = state.visible.has(mesh.userData.point.meridian_id);
+  for (const line of state.meridians) line.visible = state.visible.has(line.userData.meridian);
 }
 
 // 点击拾取
 const ray = new THREE.Raycaster();
 const ndc = new THREE.Vector2();
-let downXY = null;
-renderer.domElement.addEventListener('pointerdown', e=> downXY=[e.clientX,e.clientY]);
-renderer.domElement.addEventListener('pointerup', e=>{
-  if(!downXY) return;
-  if(Math.hypot(e.clientX-downXY[0], e.clientY-downXY[1]) > 5) return;  // 拖拽不算点击
+let down = null;
+renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!down) return;
+  if (Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
   const r = renderer.domElement.getBoundingClientRect();
-  ndc.x = ((e.clientX-r.left)/r.width)*2-1;
-  ndc.y = -((e.clientY-r.top)/r.height)*2+1;
+  ndc.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
   ray.setFromCamera(ndc, camera);
-  const hits = ray.intersectObjects(state.meshes.filter(m=>m.visible), false);
-  if(hits.length) showDetail(hits[0].object.userData.point);
+  const hits = ray.intersectObjects(state.meshes.filter(m => m.visible), false);
+  if (hits.length) showDetail(hits[0].object.userData.point);
 });
 
-function showDetail(p){
+function showDetail(p) {
   const el = document.getElementById('detail');
   el.style.display = 'block';
-  el.innerHTML = `<h2>${p.name}</h2>
-    <div class="py">${p.py} · 国际代码 ${p.py} · ${p.meridian}</div>
-    <div class="row"><div class="k">释义</div>${p.shiyi||'—'}</div>
-    <div class="row"><div class="k">功能主治</div>${p.func||'—'}</div>
-    <div class="row"><div class="k">标准定位</div>${p.location||'—'}</div>`;
-  if(state.selected && state.selected!==p){
-    state.selected.userData.__hl = false;
-  }
-  state.selected = state.meshes.find(m=>m.userData.point===p);
+  el.innerHTML = `<span class="close" onclick="document.getElementById('detail').style.display='none'">×</span>
+    <h2>${p.name}</h2>
+    <div class="py">${p.py} · ${p.meridian}</div>
+    <div class="row"><div class="k">标准定位</div>${p.location || '—'}</div>
+    <div class="row"><div class="k">释义</div>${p.shiyi || '—'}</div>
+    <div class="row"><div class="k">功能主治</div>${p.func || '—'}</div>
+    <div class="row"><div class="k">体表坐标</div>x=${p.pos.x.toFixed(2)} y=${p.pos.y.toFixed(2)} z=${p.pos.z.toFixed(2)} · ${p.region}</div>`;
+  state.selected = p;
 }
 
-// 搜索
-document.getElementById('q').addEventListener('input', e=>{
-  const k = e.target.value.trim().toUpperCase();
-  if(!k) return;
-  const hit = state.points.find(p=>
-    p.name.includes(e.target.value.trim()) || p.py.toUpperCase().startsWith(k) || p.py === k);
-  if(!hit) return;
-  state.visible.add(hit.meridian_id);
-  applyVisibility();
+// 搜索：命中即切视角
+document.getElementById('q').addEventListener('input', e => {
+  const kw = e.target.value.trim();
+  if (!kw) return;
+  const up = kw.toUpperCase();
+  const hit = state.body.acupoints.find(p => p.name.includes(kw) || p.py.toUpperCase().startsWith(up));
+  if (!hit) return;
+  state.visible.add(hit.meridian_id); applyVisibility();
   showDetail(hit);
-  // 相机移到该穴
-  const wp = new THREE.Vector3(hit.pos.x, hit.pos.y, hit.pos.z)
-    .applyMatrix4(state.meridiansGroup.matrixWorld);
+  const wp = new THREE.Vector3(hit.pos.x, hit.pos.y + state.root.position.y, hit.pos.z);
   controls.target.copy(wp);
-  camera.position.copy(wp.clone().add(new THREE.Vector3(0.9, 0.25, 1.1)));
+  camera.position.copy(wp.clone().add(new THREE.Vector3(1.6, 0.6, 2.2)));
   controls.update();
 });
 
-function animate(){
+// 层开关
+document.querySelectorAll('.layers button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const name = btn.dataset.layer;
+    const on = !state.layers[name];
+    state.layers[name] = on;
+    btn.classList.toggle('on', on);
+    setLayer(name, on);
+    // 打开骨骼/肌肉/内视时，皮肤自动转内视模式（不透明皮肤会挡住它们）
+    if (['skeleton', 'muscles', 'xray'].includes(name) && on) {
+      const skinBtn = document.querySelector('.layers button[data-layer="skin"]');
+      if (state.layers.skin) { state.layers.skin = false; skinBtn?.classList.remove('on'); }
+      state.layers.xray = true;
+      document.querySelector('.layers button[data-layer="xray"]')?.classList.add('on');
+      setSkinMode(state.root, 'xray');
+    }
+  });
+});
+state.layers = { skin: true, meridians: true, points: true, skeleton: false, muscles: false, wire: false };
+
+// 视角
+const VIEWS = {
+  front: [0, 0.6, 18], back: [0, 0.6, -18], left: [-18, 0.6, 0],
+  right: [18, 0.6, 0], top: [0, 18, 0.01], iso: [10, 6, 14],
+};
+document.querySelectorAll('.views button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const v = VIEWS[btn.dataset.view];
+    camera.position.set(...v);
+    controls.target.set(0, 0, 0);
+    controls.update();
+  });
+});
+
+function animate() {
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
 }
 
-addEventListener('resize', ()=>{
-  camera.aspect = stage.clientWidth/stage.clientHeight;
+addEventListener('resize', () => {
+  camera.aspect = stage.clientWidth / stage.clientHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(stage.clientWidth, stage.clientHeight);
 });
 
-load().catch(err=>{
-  document.getElementById('stat').textContent = '数据加载失败：' + err.message;
+load().catch(err => {
+  const el = document.getElementById('err');
+  el.style.display = 'grid';
+  el.textContent = '加载失败：' + err.message;
+  document.getElementById('stat').textContent = '加载失败';
 });
 </script>
 </body>
